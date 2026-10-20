@@ -25,6 +25,8 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
 		bundleID          string
 		externalVersionID string
 		platformValue     string
+		fairplayDecrypt   bool
+		fairplayOptions   fairplayDecryptOptions
 	)
 
 	cmd := &cobra.Command{
@@ -138,8 +140,21 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
 					return err
 				}
 
-				dependencies.Logger.Log().
-					Str("output", out.DestinationPath).
+				decryptedOutput := ""
+				if fairplayDecrypt {
+					fairplayOptions.Input = out.DestinationPath
+					decrypted, decryptErr := runFairplayDecrypt(cmd.Context(), fairplayOptions)
+					if decryptErr != nil {
+						return decryptErr
+					}
+					decryptedOutput = decrypted.OutputPath
+				}
+
+				logEvent := dependencies.Logger.Log().Str("output", out.DestinationPath)
+				if decryptedOutput != "" {
+					logEvent = logEvent.Str("decryptedOutput", decryptedOutput)
+				}
+				logEvent.
 					Bool("purchased", purchased).
 					Bool("success", true).
 					Send()
@@ -173,6 +188,8 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
 	cmd.Flags().StringVar(&externalVersionID, "external-version-id", "", "External version identifier of the target app (defaults to latest version when not specified)")
 	cmd.Flags().StringVar(&platformValue, "platform", "", "Platform to download for: iphone (iOS), ipad (iPadOS), appletv (tvOS), watchos, visionos, or macos")
 	cmd.Flags().BoolVar(&acquireLicense, "purchase", false, "Obtain a license for the app if needed")
+	cmd.Flags().BoolVar(&fairplayDecrypt, "fairplay-decrypt", false, "Decrypt the downloaded IPA with the portable FairPlay pipeline")
+	fairplayOptions.addFlags(cmd, "fairplay-")
 
 	return cmd
 }

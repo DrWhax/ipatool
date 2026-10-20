@@ -5,39 +5,31 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rs/zerolog"
-	"go.uber.org/mock/gomock"
 )
 
 var _ = Describe("Logger", func() {
 	var (
-		ctrl       *gomock.Controller
-		mockWriter *MockWriter
-		logger     Logger
+		logWriter *recordingLogWriter
+		logger    Logger
 	)
 
 	BeforeEach(func() {
-		ctrl = gomock.NewController(GinkgoT())
-		mockWriter = NewMockWriter(ctrl)
+		logWriter = &recordingLogWriter{}
 	})
 
 	Context("Verbose logger", func() {
 		BeforeEach(func() {
 			logger = NewLogger(Args{
 				Verbose: true,
-				Writer:  mockWriter,
+				Writer:  logWriter,
 			})
 		})
 
 		When("logging with verbose level", func() {
 			It("writes output", func() {
-				mockWriter.EXPECT().
-					WriteLevel(zerolog.DebugLevel, gomock.Any()).
-					Do(func(level zerolog.Level, p []byte) {
-						Expect(p).To(ContainSubstring("\"message\":\"verbose\""))
-					}).
-					Return(0, nil)
-
 				logger.Verbose().Msg("verbose")
+				Expect(logWriter.level).To(Equal(zerolog.DebugLevel))
+				Expect(logWriter.payload).To(ContainSubstring("\"message\":\"verbose\""))
 			})
 		})
 	})
@@ -46,33 +38,23 @@ var _ = Describe("Logger", func() {
 		BeforeEach(func() {
 			logger = NewLogger(Args{
 				Verbose: false,
-				Writer:  mockWriter,
+				Writer:  logWriter,
 			})
 		})
 
 		When("logging messsage", func() {
 			It("writes output", func() {
-				mockWriter.EXPECT().
-					WriteLevel(zerolog.InfoLevel, gomock.Any()).
-					Do(func(level zerolog.Level, p []byte) {
-						Expect(p).To(ContainSubstring("\"message\":\"info\""))
-					}).
-					Return(0, nil)
-
 				logger.Log().Msg("info")
+				Expect(logWriter.level).To(Equal(zerolog.InfoLevel))
+				Expect(logWriter.payload).To(ContainSubstring("\"message\":\"info\""))
 			})
 		})
 
 		When("logging error", func() {
 			It("writes output", func() {
-				mockWriter.EXPECT().
-					WriteLevel(zerolog.ErrorLevel, gomock.Any()).
-					Do(func(level zerolog.Level, p []byte) {
-						Expect(p).To(ContainSubstring("\"message\":\"error\""))
-					}).
-					Return(0, nil)
-
 				logger.Error().Msg("error")
+				Expect(logWriter.level).To(Equal(zerolog.ErrorLevel))
+				Expect(logWriter.payload).To(ContainSubstring("\"message\":\"error\""))
 			})
 		})
 
@@ -84,3 +66,19 @@ var _ = Describe("Logger", func() {
 		})
 	})
 })
+
+type recordingLogWriter struct {
+	level   zerolog.Level
+	payload string
+}
+
+func (w *recordingLogWriter) Write(p []byte) (int, error) {
+	w.payload = string(p)
+	return len(p), nil
+}
+
+func (w *recordingLogWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
+	w.level = level
+	w.payload = string(p)
+	return len(p), nil
+}

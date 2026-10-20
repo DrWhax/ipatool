@@ -68,6 +68,23 @@ Use "ipatool [command] --help" for more information about a command.
 **Note:** the tool runs in interactive mode by default. Use the `--non-interactive` flag
 if running in an automated environment.
 
+### FairPlay decryption
+
+`fairplay-decrypt` decrypts a personalized IPA using the embedded current-SINF
+model. It needs no device state, personal device secret, Wine, or runtime
+hardware call:
+
+```shell
+ipatool fairplay-decrypt --input App.ipa
+```
+
+Pass `--fairplay-decrypt` to `ipatool download` to decrypt immediately after
+download and SINF replication. The decoder validates the complete decrypted
+`key `/`iviv`/`tmpr`/`righ`/`name` atom geometry and fails closed when the SINF
+does not match the current model. Inputs are never overwritten; outputs and
+private reports default beside the source IPA. The decrypted analysis IPA must
+be recursively re-signed before installation.
+
 ### MCP tools
 
 Run `ipatool auth login` in a terminal, then configure your MCP client to launch the stdio server:
