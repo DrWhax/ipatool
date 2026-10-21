@@ -153,9 +153,9 @@ func newPageKeyDeriver(appMask [16]byte) *pageKeyDeriver {
 	return &pageKeyDeriver{block: block}
 }
 
-func (deriver *pageKeyDeriver) pageKey(wrapped []byte, cryptOffset uint64) [16]byte {
+func (deriver *pageKeyDeriver) pageKey(wrapped []byte, pageOffset uint64) [16]byte {
 	var padding [8]byte
-	binary.BigEndian.PutUint64(padding[:], cryptOffset)
+	binary.BigEndian.PutUint64(padding[:], pageOffset)
 	var plaintext [3][16]byte
 	copy(plaintext[0][:8], wrapped[8:])
 	copy(plaintext[0][8:], padding[:])

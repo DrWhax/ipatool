@@ -37,8 +37,8 @@ func TestSupplementalARM64MnemonicRejectsNearbyUnallocatedEncodings(t *testing.T
 	}
 }
 
-func TestDecryptUniversalSliceUsesAbsoluteCryptOffset(t *testing.T) {
-	blob, layout := signedAuditFixture(t, pageBytes, pageBytes, 12, 2)
+func TestDecryptUniversalSliceUsesAbsolutePageOffsets(t *testing.T) {
+	blob, layout := signedAuditFixture(t, pageBytes, 2*pageBytes, 12, 2)
 	layout.cpuType = cpuTypeARM64
 	layout.cryptID = 1
 	layout.cryptIDOffset = 16
@@ -52,23 +52,33 @@ func TestDecryptUniversalSliceUsesAbsoluteCryptOffset(t *testing.T) {
 	for index := range logical {
 		logical[index] = byte(index + 1)
 	}
-	records := make([][32]byte, 1)
-	for index := range records[0] {
-		records[0][index] = byte(0x40 + index)
+	records := make([][32]byte, 2)
+	for page := range records {
+		for index := range records[page] {
+			records[page][index] = byte(0x40 + page*len(records[page]) + index)
+		}
 	}
 	mask := appMaskFromLogicalKey(logical)
 	deriver := newPageKeyDeriver(mask)
-	key := deriver.pageKey(records[0][:16], image.sliceOffset+uint64(layout.cryptOffset))
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		t.Fatal(err)
+	plaintext := make([]byte, 2*pageBytes)
+	for page := range records {
+		key := deriver.pageKey(
+			records[page][:16],
+			image.sliceOffset+uint64(layout.cryptOffset)+uint64(page*pageBytes),
+		)
+		block, err := aes.NewCipher(key[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := int(layout.cryptOffset) + page*pageBytes
+		cipher.NewCBCEncrypter(block, records[page][16:]).CryptBlocks(
+			blob[start:start+pageBytes], plaintext[page*pageBytes:(page+1)*pageBytes],
+		)
 	}
-	plaintext := make([]byte, pageBytes)
-	cipher.NewCBCEncrypter(block, records[0][16:]).CryptBlocks(blob[pageBytes:2*pageBytes], plaintext)
 
 	directory := blob[int(layout.signatureOffset)+20:]
 	hashOffset, hashSize := 44, 32
-	for slot := 0; slot < 2; slot++ {
+	for slot := 0; slot < int(layout.signatureOffset)/pageBytes; slot++ {
 		hash, err := hashCodePage(2, blob[slot*pageBytes:(slot+1)*pageBytes])
 		if err != nil {
 			t.Fatal(err)
@@ -81,8 +91,8 @@ func TestDecryptUniversalSliceUsesAbsoluteCryptOffset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(blob[pageBytes:2*pageBytes], plaintext) {
-		t.Fatal("universal slice did not decrypt with its absolute crypt offset")
+	if !bytes.Equal(blob[pageBytes:3*pageBytes], plaintext) {
+		t.Fatal("universal slice did not decrypt with each absolute page offset")
 	}
 	if report.EncryptedSHA256 != encryptedHash || report.DecryptedSHA256 != digest(blob) {
 		t.Fatalf("unexpected image hashes: %+v", report)
