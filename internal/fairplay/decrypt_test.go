@@ -91,3 +91,46 @@ func TestDecryptUniversalSliceUsesAbsoluteCryptOffset(t *testing.T) {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
+
+func TestDecryptPagesUsesEachAbsolutePageOffset(t *testing.T) {
+	const sliceOffset = 0x4000
+	image := encryptedImage{
+		member:      "Payload/Test.app/Test",
+		sliceOffset: sliceOffset,
+		layout: machoLayout{
+			cryptOffset: pageBytes,
+			cryptSize:   2 * pageBytes,
+		},
+	}
+	var logical [16]byte
+	for index := range logical {
+		logical[index] = byte(index + 1)
+	}
+	deriver := newPageKeyDeriver(appMaskFromLogicalKey(logical))
+	output := make([]byte, 3*pageBytes)
+	records := make([][32]byte, 2)
+	want := make([]byte, 2*pageBytes)
+	for index := range records {
+		for offset := range records[index] {
+			records[index][offset] = byte(index*32 + offset + 1)
+		}
+		page := want[index*pageBytes : (index+1)*pageBytes]
+		for offset := range page {
+			page[offset] = byte(index + offset)
+		}
+		key := deriver.pageKey(records[index][:16], sliceOffset+pageBytes+uint64(index*pageBytes))
+		block, err := aes.NewCipher(key[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		cipher.NewCBCEncrypter(block, records[index][16:]).CryptBlocks(
+			output[(index+1)*pageBytes:(index+2)*pageBytes], page,
+		)
+	}
+	if _, err := decryptPagesInPlace(output, image, records, deriver); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(output[pageBytes:], want) {
+		t.Fatal("encrypted pages did not use their individual absolute file offsets")
+	}
+}

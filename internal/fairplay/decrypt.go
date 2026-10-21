@@ -306,7 +306,7 @@ func decryptPagesInPlace(output []byte, image encryptedImage, records [][32]byte
 			for index := first; index < len(records); index += workers {
 				record := records[index]
 				key := deriver.pageKey(
-					record[:16], image.sliceOffset+uint64(image.layout.cryptOffset),
+					record[:16], image.sliceOffset+uint64(image.layout.cryptOffset)+uint64(index*pageBytes),
 				)
 				keys[index] = key
 				block, _ := aes.NewCipher(key[:])
