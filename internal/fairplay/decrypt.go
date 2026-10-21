@@ -2,7 +2,6 @@ package fairplay
 
 import (
 	"archive/zip"
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
@@ -299,13 +298,12 @@ func decryptPagesInPlace(output []byte, image encryptedImage, records [][32]byte
 	if workers < 1 {
 		workers = 1
 	}
-	jobs := make(chan int)
 	var group sync.WaitGroup
 	for worker := 0; worker < workers; worker++ {
 		group.Add(1)
-		go func() {
+		go func(first int) {
 			defer group.Done()
-			for index := range jobs {
+			for index := first; index < len(records); index += workers {
 				record := records[index]
 				key := deriver.pageKey(
 					record[:16], image.sliceOffset+uint64(image.layout.cryptOffset),
@@ -317,24 +315,27 @@ func decryptPagesInPlace(output []byte, image encryptedImage, records [][32]byte
 				page := output[pageStart : pageStart+pageBytes]
 				cipher.NewCBCDecrypter(block, record[16:]).CryptBlocks(page, page)
 			}
-		}()
+		}(worker)
 	}
-	for index := range records {
-		jobs <- index
-	}
-	close(jobs)
 	group.Wait()
 	return keys, nil
 }
 
-func decryptImage(executable, output []byte, image encryptedImage, records [][32]byte, mask [16]byte, deriver *pageKeyDeriver) (*imageReport, error) {
+func decryptImage(output []byte, image encryptedImage, records [][32]byte, mask [16]byte, deriver *pageKeyDeriver) (*imageReport, error) {
 	if image.layout.cryptID != 1 {
 		return nil, fmt.Errorf("%s: expected cryptid 1", image.member)
 	}
-	if len(output) != len(executable) || !bytes.Equal(output, executable) {
-		return nil, fmt.Errorf("%s: output image is not an exact source copy", image.member)
+	start := int(image.layout.cryptOffset)
+	end := start + int(image.layout.cryptSize)
+	id := image.layout.cryptIDOffset
+	if id < 0 || id+4 > start || start < 0 || end < start || end > len(output) {
+		return nil, fmt.Errorf("%s: invalid FairPlay mutation ranges", image.member)
 	}
-	audits, err := auditCodeDirectories(executable, image.layout)
+	encryptedDigest := sha256.Sum256(output)
+	prefixDigest := sha256.Sum256(output[:id])
+	headerDigest := sha256.Sum256(output[id+4 : start])
+	suffixDigest := sha256.Sum256(output[end:])
+	audits, err := auditCodeDirectories(output, image.layout)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +353,6 @@ func decryptImage(executable, output []byte, image encryptedImage, records [][32
 		keysHash.Write(key[:])
 	}
 	clear(keys)
-	start := int(image.layout.cryptOffset)
 	first := output[start : start+pageBytes]
 	valid, mnemonics := 0, map[string]int(nil)
 	if isARM64InstructionSet(image.layout.cpuType) {
@@ -361,17 +361,18 @@ func decryptImage(executable, output []byte, image encryptedImage, records [][32
 			return nil, fmt.Errorf("%s: first page has only %d/1024 valid ARM64 words", image.member, valid)
 		}
 	}
-	binary.LittleEndian.PutUint32(output[image.layout.cryptIDOffset:image.layout.cryptIDOffset+4], 0)
-	end := start + int(image.layout.cryptSize)
-	id := image.layout.cryptIDOffset
-	if !bytes.Equal(output[:id], executable[:id]) || !bytes.Equal(output[id+4:start], executable[id+4:start]) || !bytes.Equal(output[end:], executable[end:]) {
+	binary.LittleEndian.PutUint32(output[id:id+4], 0)
+	if sha256.Sum256(output[:id]) != prefixDigest ||
+		sha256.Sum256(output[id+4:start]) != headerDigest ||
+		sha256.Sum256(output[end:]) != suffixDigest {
 		return nil, fmt.Errorf("%s: mutation escaped FairPlay range", image.member)
 	}
+	decryptedDigest := sha256.Sum256(output)
 	report := &imageReport{
 		Member: image.member, SUPFMember: image.supfMember,
 		Architecture: machoArchitecture(image.layout.cpuType, image.layout.cpuSubtype), CPUType: image.layout.cpuType, CPUSubtype: image.layout.cpuSubtype,
 		SliceOffset: image.sliceOffset, SliceSize: image.sliceSize,
-		EncryptedSHA256: digest(executable), DecryptedSHA256: digest(output),
+		EncryptedSHA256: hex.EncodeToString(encryptedDigest[:]), DecryptedSHA256: hex.EncodeToString(decryptedDigest[:]),
 		CryptOffset: image.layout.cryptOffset, CryptSize: image.layout.cryptSize, Pages: len(records),
 		FirstPlaintextPageSHA256: digest(first), FirstPageValidARM64Words: valid,
 		FirstPageStructurallyPlausible: isARM64InstructionSet(image.layout.cpuType), FirstPageMnemonics: mnemonics,
@@ -490,7 +491,8 @@ func DecryptIPA(options DecryptOptions) (DecryptResult, error) {
 	tempName := temporary.Name()
 	defer os.Remove(tempName)
 	defer temporary.Close()
-	writer := zip.NewWriter(temporary)
+	outputHasher := sha256.New()
+	writer := zip.NewWriter(io.MultiWriter(temporary, outputHasher))
 	var imageReports []*imageReport
 	pages := 0
 	for _, file := range source.File {
@@ -520,7 +522,6 @@ func DecryptIPA(options DecryptOptions) (DecryptResult, error) {
 		if err != nil {
 			return result, err
 		}
-		decryptedMember := append([]byte(nil), blob...)
 		for _, image := range images {
 			end := image.sliceOffset + image.sliceSize
 			if end < image.sliceOffset || end > uint64(len(blob)) {
@@ -530,17 +531,14 @@ func DecryptIPA(options DecryptOptions) (DecryptResult, error) {
 			if err != nil {
 				return result, err
 			}
-			report, err := decryptImage(
-				blob[image.sliceOffset:end], decryptedMember[image.sliceOffset:end],
-				image, records, mask, deriver,
-			)
+			report, err := decryptImage(blob[image.sliceOffset:end], image, records, mask, deriver)
 			if err != nil {
 				return result, err
 			}
 			imageReports = append(imageReports, report)
 			pages += len(records)
 		}
-		if _, err := target.Write(decryptedMember); err != nil {
+		if _, err := target.Write(blob); err != nil {
 			return result, err
 		}
 	}
@@ -553,10 +551,7 @@ func DecryptIPA(options DecryptOptions) (DecryptResult, error) {
 	if err := temporary.Close(); err != nil {
 		return result, err
 	}
-	outputHash, err := fileSHA256(tempName)
-	if err != nil {
-		return result, err
-	}
+	outputHash := hex.EncodeToString(outputHasher.Sum(nil))
 	providerName, _ := material.Evidence["provider_kind"].(string)
 	if providerName == "" {
 		providerName = "unknown"

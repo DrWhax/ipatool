@@ -76,13 +76,16 @@ func TestDecryptUniversalSliceUsesAbsoluteCryptOffset(t *testing.T) {
 		copy(directory[hashOffset+slot*hashSize:], hash)
 	}
 
-	decrypted := append([]byte(nil), blob...)
-	report, err := decryptImage(blob, decrypted, image, records, mask, deriver)
+	encryptedHash := digest(blob)
+	report, err := decryptImage(blob, image, records, mask, deriver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(decrypted[pageBytes:2*pageBytes], plaintext) {
+	if !bytes.Equal(blob[pageBytes:2*pageBytes], plaintext) {
 		t.Fatal("universal slice did not decrypt with its absolute crypt offset")
+	}
+	if report.EncryptedSHA256 != encryptedHash || report.DecryptedSHA256 != digest(blob) {
+		t.Fatalf("unexpected image hashes: %+v", report)
 	}
 	if report.Architecture != "arm64" || report.FirstPageAudit != "arm64-instruction-decode" || !report.FirstPageStructurallyPlausible {
 		t.Fatalf("unexpected report: %+v", report)
