@@ -143,6 +143,18 @@ func (t *appstore) sendEntDownloadRequest(ctx context.Context, endpoint download
 		return res, err
 	}
 
+	keybag := downloadResponseKeybag(res.Data)
+	if len(keybag) != 0 {
+		requestBlob, decodeErr := base64.StdEncoding.DecodeString(blob)
+		if decodeErr != nil {
+			return res, fmt.Errorf("decode matching kbsync request: %w", decodeErr)
+		}
+		res.Data.fairPlayCapture = &FairPlayDownloadCapture{
+			KBSync: append([]byte(nil), requestBlob...),
+			Keybag: append([]byte(nil), keybag...),
+		}
+	}
+
 	if res.Data.Items[0].URL == "" {
 		return res, errors.New("ent/download response has no package URL")
 	}

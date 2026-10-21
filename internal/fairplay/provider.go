@@ -3,6 +3,7 @@ package fairplay
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 )
 
 type KeyMaterial struct {
@@ -31,7 +32,7 @@ func ResolveLogicalKey(sinf []byte) (KeyMaterial, error) {
 	}
 	logical, model, err := currentSINFLogicalKey(private)
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("unsupported FairPlay enrollment %s: %w", selector.Identifier(), err)
 	}
 	result.LogicalKey = logical
 	result.Evidence = map[string]any{

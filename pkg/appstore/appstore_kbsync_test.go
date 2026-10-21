@@ -83,6 +83,21 @@ var _ = Describe("AppStore (preferred kbsync download)", func() {
 		Expect(generated).To(Equal(1))
 	})
 
+	It("keeps the request and response blobs from the same ent/download transaction", func() {
+		captured := success
+		captured.Data.Keybag = []byte("response keybag")
+		gomock.InOrder(
+			bags.EXPECT().Send(gomock.Any()).Return(http.Result[bagResult]{StatusCode: gohttp.StatusOK, Data: bag}, nil),
+			downloads.EXPECT().Send(gomock.Any()).Return(captured, nil),
+		)
+
+		actual, _, err := store.sendDownloadProduct(context.Background(), account, app, guid, versionID, PlatformIPhone)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(actual.Data.fairPlayCapture).NotTo(BeNil())
+		Expect(actual.Data.fairPlayCapture.KBSync).To(Equal([]byte("kbsync blob")))
+		Expect(actual.Data.fairPlayCapture.Keybag).To(Equal([]byte("response keybag")))
+	})
+
 	It("enables kbsync generation for normal clients", func() {
 		Expect(NewAppStore(Args{}).(*appstore).kbsyncGenerator).NotTo(BeNil())
 	})

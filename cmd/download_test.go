@@ -2,8 +2,12 @@ package cmd
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/majd/ipatool/v2/pkg/appstore"
 	"github.com/majd/ipatool/v2/pkg/log"
@@ -78,6 +82,77 @@ var _ = Describe("Download command", func() {
 	It("exposes macOS in platform help", func() {
 		cmd := downloadCmd()
 		Expect(cmd.Flag("platform").Usage).To(ContainSubstring("macos"))
+	})
+
+	It("writes a private paired FairPlay enrollment capture", func() {
+		captureParent := GinkgoT().TempDir()
+		captureDirectory := filepath.Join(captureParent, "capture")
+		sinf := syntheticCaptureSINF(0x5a7f10e7, 2)
+		store := &fakeDownloadAppStore{
+			account: appstore.Account{
+				Email:         "must-not-appear@example.com",
+				Password:      "must-not-appear-password",
+				PasswordToken: "must-not-appear-token",
+			},
+			downloadOutput: appstore.DownloadOutput{
+				DestinationPath: "X.ipa",
+				Sinfs:           []appstore.Sinf{{Data: sinf}},
+				FairPlayCapture: &appstore.FairPlayDownloadCapture{
+					KBSync: []byte("paired request"),
+					Keybag: []byte("paired response"),
+				},
+			},
+		}
+		previousDependencies := dependencies
+		DeferCleanup(func() { dependencies = previousDependencies })
+		dependencies.Logger = log.NewLogger(log.Args{})
+
+		cmd := downloadCmdWithAppStore(func() appstore.AppStore { return store })
+		cmd.SetArgs([]string{
+			"--app-id", "333903271",
+			"--external-version-id", "893310510",
+			"--fairplay-capture-dir", captureDirectory,
+		})
+		cmd.SetContext(context.WithValue(context.Background(), interactiveKey, false))
+
+		Expect(cmd.Execute()).To(Succeed())
+		Expect(store.downloadInputs).To(HaveLen(1))
+		Expect(store.downloadInputs[0].CaptureFairPlay).To(BeTrue())
+		Expect(os.ReadFile(filepath.Join(captureDirectory, "kbsync.bin"))).To(Equal([]byte("paired request")))
+		Expect(os.ReadFile(filepath.Join(captureDirectory, "keybag.bin"))).To(Equal([]byte("paired response")))
+		Expect(os.ReadFile(filepath.Join(captureDirectory, "sinf.bin"))).To(Equal(sinf))
+
+		for _, name := range []string{"kbsync.bin", "keybag.bin", "sinf.bin", "receipt.json"} {
+			info, err := os.Stat(filepath.Join(captureDirectory, name))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Mode().Perm()).To(Equal(os.FileMode(0600)))
+		}
+		info, err := os.Stat(captureDirectory)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0700)))
+
+		receiptBytes, err := os.ReadFile(filepath.Join(captureDirectory, "receipt.json"))
+		Expect(err).NotTo(HaveOccurred())
+		var receipt fairPlayCaptureReceipt
+		Expect(json.Unmarshal(receiptBytes, &receipt)).To(Succeed())
+		Expect(receipt.Schema).To(Equal("ipatool-fairplay-enrollment-capture-v1"))
+		Expect(receipt.Source).To(Equal("ent/download"))
+		Expect(receipt.SINFs).To(HaveLen(1))
+		Expect(receipt.SINFs[0].Selector).To(Equal("5a7f10e7:00000002"))
+		Expect(string(receiptBytes)).NotTo(ContainSubstring("must-not-appear"))
+	})
+
+	It("refuses to overwrite an existing FairPlay capture directory", func() {
+		directory := filepath.Join(GinkgoT().TempDir(), "capture")
+		Expect(os.Mkdir(directory, 0700)).To(Succeed())
+		_, err := writeFairPlayCapture(directory, appstore.DownloadOutput{
+			DestinationPath: "App.ipa",
+			Sinfs:           []appstore.Sinf{{Data: syntheticCaptureSINF(1, 2)}},
+			FairPlayCapture: &appstore.FairPlayDownloadCapture{
+				KBSync: []byte("request"), Keybag: []byte("response"),
+			},
+		}, appstore.App{ID: 42}, "123", appstore.PlatformIPhone)
+		Expect(err).To(MatchError(ContainSubstring("create new FairPlay capture directory")))
 	})
 
 	It("skips sinf replication for macOS packages", func() {
@@ -263,6 +338,7 @@ type fakeDownloadAppStore struct {
 	lookupError      error
 	purchaseErrors   []error
 	purchaseInputs   []appstore.PurchaseInput
+	downloadOutput   appstore.DownloadOutput
 }
 
 func (f *fakeDownloadAppStore) Login(input appstore.LoginInput) (appstore.LoginOutput, error) {
@@ -312,7 +388,28 @@ func (f *fakeDownloadAppStore) Download(input appstore.DownloadInput) (appstore.
 		return appstore.DownloadOutput{}, f.downloadErrors[index]
 	}
 
+	if f.downloadOutput.DestinationPath != "" {
+		return f.downloadOutput, nil
+	}
+
 	return appstore.DownloadOutput{DestinationPath: "app.pkg"}, nil
+}
+
+func syntheticCaptureSINF(user, key uint32) []byte {
+	atom := func(name string, payload []byte) []byte {
+		result := make([]byte, 8+len(payload))
+		binary.BigEndian.PutUint32(result[:4], uint32(len(result)))
+		copy(result[4:8], name)
+		copy(result[8:], payload)
+		return result
+	}
+	userBytes := make([]byte, 4)
+	keyBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(userBytes, user)
+	binary.BigEndian.PutUint32(keyBytes, key)
+	schi := append(atom("user", userBytes), atom("key ", keyBytes)...)
+
+	return atom("sinf", atom("schi", schi))
 }
 
 func (*fakeDownloadAppStore) ReplicateSinf(input appstore.ReplicateSinfInput) error { return nil }

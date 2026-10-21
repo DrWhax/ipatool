@@ -71,6 +71,17 @@ func sinfSelector(blob []byte, fields []sinfAtom) (SINFSelector, error) {
 	}, nil
 }
 
+// ParseSINFSelector returns the personalized user/key selector carried by a
+// SINF. It does not decrypt or otherwise interpret the private payload.
+func ParseSINFSelector(blob []byte) (SINFSelector, error) {
+	fields, err := parseSINFFields(blob)
+	if err != nil {
+		return SINFSelector{}, err
+	}
+
+	return sinfSelector(blob, fields)
+}
+
 func parseSINFFields(blob []byte) ([]sinfAtom, error) {
 	roots, err := sinfAtoms(blob, 0, len(blob))
 	if err != nil {

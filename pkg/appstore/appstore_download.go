@@ -28,11 +28,20 @@ type DownloadInput struct {
 	Progress          *progressbar.ProgressBar
 	ExternalVersionID string
 	Platform          Platform
+	CaptureFairPlay   bool
+}
+
+// FairPlayDownloadCapture contains the transaction-bound request and response
+// blobs from one successful ent/download. Treat both values as private.
+type FairPlayDownloadCapture struct {
+	KBSync []byte
+	Keybag []byte
 }
 
 type DownloadOutput struct {
 	DestinationPath string
 	Sinfs           []Sinf
+	FairPlayCapture *FairPlayDownloadCapture
 }
 
 func (t *appstore) Download(input DownloadInput) (DownloadOutput, error) {
@@ -90,6 +99,9 @@ func (t *appstore) Download(input DownloadInput) (DownloadOutput, error) {
 	if len(res.Data.Items) == 0 {
 		return DownloadOutput{}, NewErrorWithMetadata(errors.New("invalid response"), res)
 	}
+	if input.CaptureFairPlay && res.Data.fairPlayCapture == nil {
+		return DownloadOutput{}, errors.New("FairPlay capture requires a successful ent/download response containing a keybag")
+	}
 
 	item := res.Data.Items[0]
 
@@ -111,7 +123,12 @@ func (t *appstore) Download(input DownloadInput) (DownloadOutput, error) {
 	}
 
 	if packagePlatform == PlatformMacOS {
-		return t.downloadMacPackage(input.Context, item, destination, machineGUID, input.Progress)
+		out, downloadErr := t.downloadMacPackage(input.Context, item, destination, machineGUID, input.Progress)
+		if downloadErr == nil && input.CaptureFairPlay {
+			out.FairPlayCapture = cloneFairPlayDownloadCapture(res.Data.fairPlayCapture)
+		}
+
+		return out, downloadErr
 	}
 
 	tmpPath := fmt.Sprintf("%s.tmp", destination)
@@ -141,10 +158,15 @@ func (t *appstore) Download(input DownloadInput) (DownloadOutput, error) {
 		return DownloadOutput{}, fmt.Errorf("failed to remove file: %w", err)
 	}
 
-	return DownloadOutput{
+	out := DownloadOutput{
 		DestinationPath: destination,
 		Sinfs:           item.Sinfs,
-	}, nil
+	}
+	if input.CaptureFairPlay {
+		out.FairPlayCapture = cloneFairPlayDownloadCapture(res.Data.fairPlayCapture)
+	}
+
+	return out, nil
 }
 
 type platformPackageInfo struct {
@@ -230,12 +252,19 @@ type downloadItemResult struct {
 	URL                 string                 `plist:"URL,omitempty"`
 	Sinfs               []Sinf                 `plist:"sinfs,omitempty"`
 	Metadata            map[string]interface{} `plist:"metadata,omitempty"`
+	Keybag              interface{}            `plist:"keybag,omitempty"`
+	SubKeyBag           interface{}            `plist:"subKeyBag,omitempty"`
+	SBKeyBag            interface{}            `plist:"sbKeyBag,omitempty"`
 }
 
 type downloadResult struct {
 	FailureType     string               `plist:"failureType,omitempty"`
 	CustomerMessage string               `plist:"customerMessage,omitempty"`
 	Items           []downloadItemResult `plist:"songList,omitempty"`
+	Keybag          interface{}          `plist:"keybag,omitempty"`
+	SubKeyBag       interface{}          `plist:"subKeyBag,omitempty"`
+	SBKeyBag        interface{}          `plist:"sbKeyBag,omitempty"`
+	fairPlayCapture *FairPlayDownloadCapture
 }
 
 //nolint:nonamedreturns // Deferred close errors must propagate to callers.

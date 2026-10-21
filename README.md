@@ -85,6 +85,28 @@ does not match the current model. Inputs are never overwritten; outputs and
 private reports default beside the source IPA. The decrypted analysis IPA must
 be recursively re-signed before installation.
 
+### FairPlay enrollment diagnostics
+
+This diagnostic branch can preserve the transaction-bound FairPlay inputs from
+one successful `ent/download` request:
+
+```shell
+ipatool download \
+  --app-id 333903271 \
+  --external-version-id 893310510 \
+  --output X-12.36.ipa \
+  --fairplay-capture-dir X-12.36-fairplay-capture
+```
+
+The capture directory must not already exist. It is created with private
+permissions and contains `kbsync.bin`, `keybag.bin`, the returned SINF, and a
+`receipt.json` containing selectors, byte lengths, and SHA-256 hashes. The
+KBSync and keybag are taken from the same Store transaction. Passwords, 2FA
+codes, cookies, and Store authentication tokens are not written.
+
+The captured blobs are personalized material. Share the directory privately;
+do not attach it to a public issue.
+
 ### MCP tools
 
 Run `ipatool auth login` in a terminal, then configure your MCP client to launch the stdio server:

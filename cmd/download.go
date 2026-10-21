@@ -27,6 +27,7 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
 		platformValue     string
 		fairplayDecrypt   bool
 		fairplayOptions   fairplayDecryptOptions
+		fairplayCapture   string
 	)
 
 	cmd := &cobra.Command{
@@ -131,9 +132,22 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
 					Progress:          progress,
 					ExternalVersionID: externalVersionID,
 					Platform:          platform,
+					CaptureFairPlay:   fairplayCapture != "",
 				})
 				if err != nil {
 					return err
+				}
+				if out.FairPlayCapture != nil {
+					defer clear(out.FairPlayCapture.KBSync)
+					defer clear(out.FairPlayCapture.Keybag)
+				}
+
+				captureOutput := ""
+				if fairplayCapture != "" {
+					captureOutput, err = writeFairPlayCapture(fairplayCapture, out, app, externalVersionID, platform)
+					if err != nil {
+						return err
+					}
 				}
 
 				if err := replicateDownloadSinf(store, platform, out); err != nil {
@@ -153,6 +167,9 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
 				logEvent := dependencies.Logger.Log().Str("output", out.DestinationPath)
 				if decryptedOutput != "" {
 					logEvent = logEvent.Str("decryptedOutput", decryptedOutput)
+				}
+				if captureOutput != "" {
+					logEvent = logEvent.Str("fairplayCapture", captureOutput)
 				}
 				logEvent.
 					Bool("purchased", purchased).
@@ -189,6 +206,7 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
 	cmd.Flags().StringVar(&platformValue, "platform", "", "Platform to download for: iphone (iOS), ipad (iPadOS), appletv (tvOS), watchos, visionos, or macos")
 	cmd.Flags().BoolVar(&acquireLicense, "purchase", false, "Obtain a license for the app if needed")
 	cmd.Flags().BoolVar(&fairplayDecrypt, "fairplay-decrypt", false, "Decrypt the downloaded IPA with the portable FairPlay pipeline")
+	cmd.Flags().StringVar(&fairplayCapture, "fairplay-capture-dir", "", "Write paired KBSync, keybag, SINF, and hashes to a new private directory")
 	fairplayOptions.addFlags(cmd, "fairplay-")
 
 	return cmd
