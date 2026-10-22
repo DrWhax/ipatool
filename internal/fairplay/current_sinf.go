@@ -12,6 +12,8 @@ const (
 	currentSINFModelName   = "macos26-26A428-current-sinf"
 	currentSINFModelSHA256 = "c9b7c4885f8ca634ee73e4b20de610a0d6d2e7d56336358733526ceca8f2e5bb"
 	currentSINFModelBytes  = 8 + 4 + 4 + 32 + 16 + 16 + 16*256
+	legacySINFModelMagic   = "FPS26A4\x00"
+	enrollmentModelMagic   = "FPSENR1\x00"
 )
 
 var errCurrentSINFProfileMismatch = errors.New("SINF does not match the embedded current FairPlay profile")
@@ -28,11 +30,11 @@ type currentSINFModel struct {
 
 func parseCurrentSINFModel(pack []byte) (currentSINFModel, error) {
 	var model currentSINFModel
-	if len(pack) != currentSINFModelBytes || string(pack[:8]) != "FPS26A4\x00" ||
+	if len(pack) != currentSINFModelBytes ||
+		(string(pack[:8]) != legacySINFModelMagic && string(pack[:8]) != enrollmentModelMagic) ||
 		binary.LittleEndian.Uint32(pack[8:12]) != 1 ||
-		binary.LittleEndian.Uint32(pack[12:16]) != uint32(len(pack)) ||
-		digest(pack) != currentSINFModelSHA256 {
-		return model, fmt.Errorf("invalid embedded current SINF model")
+		binary.LittleEndian.Uint32(pack[12:16]) != uint32(len(pack)) {
+		return model, fmt.Errorf("invalid current SINF model envelope")
 	}
 	copy(model.fairplaydHash[:], pack[16:48])
 	copy(model.key[:], pack[48:64])
@@ -48,6 +50,17 @@ func parseCurrentSINFModel(pack []byte) (currentSINFModel, error) {
 		}
 	}
 	return model, nil
+}
+
+func parseEmbeddedCurrentSINFModel() (currentSINFModel, error) {
+	return parseCurrentSINFModelWithDigest(currentSINFModelPack, currentSINFModelSHA256)
+}
+
+func parseCurrentSINFModelWithDigest(pack []byte, expected string) (currentSINFModel, error) {
+	if digest(pack) != expected {
+		return currentSINFModel{}, fmt.Errorf("invalid embedded current SINF model")
+	}
+	return parseCurrentSINFModel(pack)
 }
 
 func currentSINFPrivateKey(model currentSINFModel, source []byte) ([16]byte, error) {
@@ -123,18 +136,4 @@ func currentSINFPrivateKey(model currentSINFModel, source []byte) ([16]byte, err
 		return innerKey, fmt.Errorf("%w: plaintext has trailing data", errCurrentSINFProfileMismatch)
 	}
 	return innerKey, nil
-}
-
-func currentSINFLogicalKey(source []byte) ([16]byte, currentSINFModel, error) {
-	var zero [16]byte
-	model, err := parseCurrentSINFModel(currentSINFModelPack)
-	if err != nil {
-		return zero, currentSINFModel{}, err
-	}
-	innerKey, err := currentSINFPrivateKey(model, source)
-	if err != nil {
-		return zero, model, err
-	}
-	defer clear(innerKey[:])
-	return logicalFromInnerKey(innerKey), model, nil
 }

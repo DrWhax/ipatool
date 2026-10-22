@@ -40,8 +40,8 @@ type ipaInventory struct {
 }
 
 type DecryptOptions struct {
-	InputPath, OutputPath, ReportPath string
-	Force                             bool
+	InputPath, OutputPath, ReportPath, ModelPath string
+	Force                                        bool
 }
 
 type DecryptResult struct {
@@ -472,7 +472,27 @@ func DecryptIPA(options DecryptOptions) (DecryptResult, error) {
 	if err != nil {
 		return result, err
 	}
-	material, err := ResolveLogicalKey(sinf)
+	var material KeyMaterial
+	if options.ModelPath == "" {
+		material, err = ResolveLogicalKey(sinf)
+	} else {
+		modelInfo, statErr := os.Stat(options.ModelPath)
+		if statErr != nil {
+			return result, fmt.Errorf("inspect FairPlay enrollment model: %w", statErr)
+		}
+		if !modelInfo.Mode().IsRegular() {
+			return result, fmt.Errorf("FairPlay enrollment model is not a regular file")
+		}
+		if modelInfo.Mode().Perm()&0o077 != 0 {
+			return result, fmt.Errorf("FairPlay enrollment model must not be accessible by group or other users")
+		}
+		modelPack, readErr := os.ReadFile(options.ModelPath)
+		if readErr != nil {
+			return result, fmt.Errorf("read FairPlay enrollment model: %w", readErr)
+		}
+		defer clear(modelPack)
+		material, err = ResolveLogicalKeyWithModel(sinf, modelPack)
+	}
 	if err != nil {
 		return result, err
 	}
@@ -556,7 +576,10 @@ func DecryptIPA(options DecryptOptions) (DecryptResult, error) {
 	if providerName == "" {
 		providerName = "unknown"
 	}
-	modelName := currentSINFModelName
+	modelName, _ := material.Evidence["model_name"].(string)
+	if modelName == "" {
+		modelName = "unknown"
+	}
 	report := decryptionReport{
 		Schema: "ipatool-fairplay-decryption-v1", ModelBuild: modelName,
 		Input:    reportFile{Path: inventory.path, Bytes: inventory.bytes, SHA256: inventory.sha256},

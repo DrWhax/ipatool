@@ -58,6 +58,9 @@ func pathsAlias(left, right string) bool {
 
 func validatePaths(options DecryptOptions) (DecryptOptions, error) {
 	inputs := []*string{&options.InputPath}
+	if options.ModelPath != "" {
+		inputs = append(inputs, &options.ModelPath)
+	}
 	for _, name := range inputs {
 		resolved, err := canonicalPath(*name)
 		if err != nil {

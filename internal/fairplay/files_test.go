@@ -53,6 +53,17 @@ func TestValidatePathsProtectsEveryInput(t *testing.T) {
 	}
 }
 
+func TestValidatePathsProtectsEnrollmentModel(t *testing.T) {
+	options := testOptions(t)
+	options.Force = true
+	options.ModelPath = testFile(t, filepath.Dir(options.InputPath), "enrollment.bin", "private model")
+	options.OutputPath = options.ModelPath
+	if _, err := validatePaths(options); err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Fatalf("model overwrite was accepted: %v", err)
+	}
+	assertFile(t, options.ModelPath, "private model")
+}
+
 func TestValidatePathsRejectsDestinationCollisions(t *testing.T) {
 	options := testOptions(t)
 	options.ReportPath = options.OutputPath

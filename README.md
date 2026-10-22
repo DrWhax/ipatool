@@ -71,12 +71,28 @@ if running in an automated environment.
 ### FairPlay decryption
 
 `fairplay-decrypt` decrypts a personalized IPA using the embedded current-SINF
-model. It needs no device state, personal device secret, Wine, or runtime
-hardware call:
+model. It needs no device state, Wine, or runtime hardware call for a matching
+enrollment:
 
 ```shell
 ipatool fairplay-decrypt --input App.ipa
 ```
+
+Independent FairPlay enrollments can use a model pack produced by a matching
+provisioning run:
+
+```shell
+ipatool fairplay-decrypt \
+  --input App.ipa \
+  --model fairplay-enrollment.bin
+```
+
+The same option is available as `--fairplay-model` when decrypting directly
+after `ipatool download`. Enrollment models contain private key material and
+must be readable only by their owner; ipatool rejects group- or world-readable
+model files. A model is usable only with the SINF profile that it validates.
+The current branch consumes portable model packs but does not yet generate a
+new pack from Apple hardware-backed provisioning state.
 
 Pass `--fairplay-decrypt` to `ipatool download` to decrypt immediately after
 download and SINF replication. The decoder validates the complete decrypted
