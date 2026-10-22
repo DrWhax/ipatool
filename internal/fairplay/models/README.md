@@ -1,9 +1,9 @@
 # FairPlay enrollment model packs
 
-`fairplay-decrypt --model` accepts a private model produced by a matching
-FairPlay provisioning run. The model contains the enrollment-specific SINF
-decoder; it does not contain executable code or require Apple hardware when it
-is consumed.
+`fairplay-decrypt --model` is an experimental development override. The only
+supported bundled profile is macOS 27.0.1 build 26A428. An external pack
+contains a recovered SINF decoder; it does not contain executable code or
+require Apple hardware when it is consumed.
 
 All integers are little-endian. Version 1 is exactly 4,176 bytes:
 
@@ -25,12 +25,8 @@ The pack contains private enrollment key material. Keep it mode `0600`; the
 CLI rejects group- or world-readable model files and refuses to overwrite the
 model even when `--force` is set.
 
-Generating a new pack is a separate provisioning operation. On current macOS,
-FairPlayIOKit selector `0x15` ultimately uses device-bound hardware AES. The
-hardware key never needs to leave the device, but opening the user client
-requires Apple's private `com.apple.private.FairPlayIOKitUserClient.access`
-entitlement. A normal process, including root, receives `0xe00002c2`.
-Therefore a production provisioner must use an authorized Apple-service relay
-or import the output of a matching trusted provisioning helper; ipatool must
-not embed, emulate, or claim to extract the fused hardware key.
+Generating a new pack is outside the supported ipatool workflow. The CLI can
+consume a research-generated pack so recovered models can be tested without
+changing Go code, but no compatibility or generation support is promised for
+other builds or enrollments.
 

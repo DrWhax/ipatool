@@ -71,15 +71,16 @@ if running in an automated environment.
 ### FairPlay decryption
 
 `fairplay-decrypt` decrypts a personalized IPA using the embedded current-SINF
-model. It needs no device state, Wine, or runtime hardware call for a matching
-enrollment:
+model recovered from macOS 27.0.1 build 26A428. This is the only FairPlay
+profile currently supported. It needs no device state, Wine, or runtime
+hardware call when the IPA matches that profile:
 
 ```shell
 ipatool fairplay-decrypt --input App.ipa
 ```
 
-Independent FairPlay enrollments can use a model pack produced by a matching
-provisioning run:
+`--model` is retained as an experimental development override. It is not a
+promise of support for other macOS releases or FairPlay enrollments:
 
 ```shell
 ipatool fairplay-decrypt \
@@ -87,19 +88,19 @@ ipatool fairplay-decrypt \
   --model fairplay-enrollment.bin
 ```
 
-The same option is available as `--fairplay-model` when decrypting directly
-after `ipatool download`. Enrollment models contain private key material and
-must be readable only by their owner; ipatool rejects group- or world-readable
-model files. A model is usable only with the SINF profile that it validates.
-The current branch consumes portable model packs but does not yet generate a
-new pack from Apple hardware-backed provisioning state.
+The same experimental option is available as `--fairplay-model` when
+decrypting directly after `ipatool download`. Model files contain private key
+material and must be readable only by their owner; ipatool rejects group- or
+world-readable files. ipatool does not generate these files and does not
+support arbitrary profiles.
 
 Pass `--fairplay-decrypt` to `ipatool download` to decrypt immediately after
 download and SINF replication. The decoder validates the complete decrypted
 `key `/`iviv`/`tmpr`/`righ`/`name` atom geometry and fails closed when the SINF
 does not match the current model. Inputs are never overwritten; outputs and
-private reports default beside the source IPA. The decrypted analysis IPA must
-be recursively re-signed before installation.
+private reports default beside the source IPA. A profile mismatch reports the
+supported macOS release and fails closed. The decrypted analysis IPA must be
+recursively re-signed before installation.
 
 ### FairPlay enrollment diagnostics
 

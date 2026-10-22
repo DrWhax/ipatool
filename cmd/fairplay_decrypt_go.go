@@ -44,7 +44,7 @@ func fairplayDecryptCmd() *cobra.Command {
 func (o *fairplayDecryptOptions) addFlags(cmd *cobra.Command, prefix string) {
 	cmd.Flags().StringVar(&o.Output, prefix+"output", "", "Decrypted analysis IPA path (defaults beside the input)")
 	cmd.Flags().StringVar(&o.Report, prefix+"report", "", "Private decryption report path")
-	cmd.Flags().StringVar(&o.Model, prefix+"model", "", "Private enrollment model pack for this SINF profile")
+	cmd.Flags().StringVar(&o.Model, prefix+"model", "", "Experimental private model override for this SINF profile")
 	cmd.Flags().BoolVar(&o.Force, prefix+"force", false, "Replace existing output and report files")
 }
 

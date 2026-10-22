@@ -9,14 +9,15 @@ import (
 )
 
 const (
-	currentSINFModelName   = "macos26-26A428-current-sinf"
-	currentSINFModelSHA256 = "c9b7c4885f8ca634ee73e4b20de610a0d6d2e7d56336358733526ceca8f2e5bb"
-	currentSINFModelBytes  = 8 + 4 + 4 + 32 + 16 + 16 + 16*256
-	legacySINFModelMagic   = "FPS26A4\x00"
-	enrollmentModelMagic   = "FPSENR1\x00"
+	currentSINFModelName      = "macos27.0.1-26A428-current-sinf"
+	currentSINFSupportedBuild = "macOS 27.0.1 (26A428)"
+	currentSINFModelSHA256    = "c9b7c4885f8ca634ee73e4b20de610a0d6d2e7d56336358733526ceca8f2e5bb"
+	currentSINFModelBytes     = 8 + 4 + 4 + 32 + 16 + 16 + 16*256
+	legacySINFModelMagic      = "FPS26A4\x00"
+	enrollmentModelMagic      = "FPSENR1\x00"
 )
 
-var errCurrentSINFProfileMismatch = errors.New("SINF does not match the embedded current FairPlay profile")
+var errCurrentSINFProfileMismatch = errors.New("SINF does not match the selected FairPlay model")
 
 //go:embed models/macos26-26A428-current-sinf.bin
 var currentSINFModelPack []byte

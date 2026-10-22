@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -187,5 +188,22 @@ func TestCurrentSINFRejectsMutation(t *testing.T) {
 	_, err = currentSINFPrivateKey(model, private)
 	if !errors.Is(err, errCurrentSINFProfileMismatch) {
 		t.Fatalf("mutated current SINF returned %v", err)
+	}
+}
+
+func TestBundledProfileMismatchNamesSupportedBuild(t *testing.T) {
+	fixture := syntheticCurrentSINFFixture(t, 0x90a0b0c0, 7, 96, [16]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99})
+	fields, err := parseSINFFields(fixture.sinf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	private, err := sinfPrivatePayload(fixture.sinf, fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	private[31] ^= 1
+	_, err = ResolveLogicalKey(fixture.sinf)
+	if err == nil || !strings.Contains(err.Error(), currentSINFSupportedBuild) {
+		t.Fatalf("profile mismatch did not name supported build: %v", err)
 	}
 }

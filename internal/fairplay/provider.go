@@ -21,12 +21,12 @@ func ResolveLogicalKey(sinf []byte) (KeyMaterial, error) {
 	if err != nil {
 		return KeyMaterial{}, err
 	}
-	return resolveLogicalKey(sinf, model, currentSINFModelName, currentSINFModelSHA256, "embedded-build-specific-current-sinf-model")
+	return resolveLogicalKey(sinf, model, currentSINFModelName, currentSINFModelSHA256, "embedded-build-specific-current-sinf-model", currentSINFSupportedBuild)
 }
 
-// ResolveLogicalKeyWithModel resolves a SINF with an enrollment model produced
-// by a matching provisioning run. Model packs are intentionally data, not Go
-// code, so the decryption path remains portable after enrollment.
+// ResolveLogicalKeyWithModel resolves a SINF with an experimental external
+// model. Model packs are intentionally data, not Go code, so research models
+// can be tested without changing the portable decryption path.
 func ResolveLogicalKeyWithModel(sinf, pack []byte) (KeyMaterial, error) {
 	model, err := parseCurrentSINFModel(pack)
 	if err != nil {
@@ -34,10 +34,10 @@ func ResolveLogicalKeyWithModel(sinf, pack []byte) (KeyMaterial, error) {
 	}
 	modelSHA256 := digest(pack)
 	modelName := "external-current-sinf-" + modelSHA256[:16]
-	return resolveLogicalKey(sinf, model, modelName, modelSHA256, "external-enrollment-model")
+	return resolveLogicalKey(sinf, model, modelName, modelSHA256, "external-enrollment-model", "")
 }
 
-func resolveLogicalKey(sinf []byte, model currentSINFModel, modelName, modelSHA256, stateOrigin string) (KeyMaterial, error) {
+func resolveLogicalKey(sinf []byte, model currentSINFModel, modelName, modelSHA256, stateOrigin, supportedBuild string) (KeyMaterial, error) {
 	var result KeyMaterial
 	fields, err := parseSINFFields(sinf)
 	if err != nil {
@@ -53,7 +53,10 @@ func resolveLogicalKey(sinf []byte, model currentSINFModel, modelName, modelSHA2
 	}
 	innerKey, err := currentSINFPrivateKey(model, private)
 	if err != nil {
-		return result, fmt.Errorf("unsupported FairPlay enrollment %s: %w", selector.Identifier(), err)
+		if supportedBuild != "" {
+			return result, fmt.Errorf("unsupported FairPlay profile %s; bundled decryption supports only %s: %w", selector.Identifier(), supportedBuild, err)
+		}
+		return result, fmt.Errorf("FairPlay profile %s does not match the selected experimental model: %w", selector.Identifier(), err)
 	}
 	defer clear(innerKey[:])
 	logical := logicalFromInnerKey(innerKey)
